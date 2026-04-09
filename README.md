@@ -15,7 +15,7 @@
 - **训练范式蛋糕类比** / **JEPA 落地时间线** / **三大路线之争**
 
 ### 🚀 在线访问
-[🔗交互式链接](https://siryzhang.github.io/A-Path-Towards-Autonomous-Machine-Intelligence/)
+[🔗点击 demo 访问](https://siryzhang.github.io/A-Path-Towards-Autonomous-Machine-Intelligence/)
 
 ### 🔗 原论文
 
