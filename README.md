@@ -15,45 +15,12 @@
 - **训练范式蛋糕类比** / **JEPA 落地时间线** / **三大路线之争**
 
 ### 🚀 在线访问
-
-部署到 GitHub Pages 后，访问：
-
-```
-https://<your-username>.github.io/ami-explorer/
-```
-
-### 📦 本地运行
-
-这是一个纯静态单文件网页，无需构建：
-
-```bash
-# 直接在浏览器中打开
-open index.html
-
-# 或者用任意 HTTP 服务器
-npx serve .
-```
+[🔗交互式链接](https://siryzhang.github.io/A-Path-Towards-Autonomous-Machine-Intelligence/)
 
 ### 🔗 原论文
 
-- **PDF**: [openreview.net/pdf?id=BZ5a1r-kVsf](https://openreview.net/pdf?id=BZ5a1r-kVsf)
-- **讨论页**: [openreview.net/forum?id=BZ5a1r-kVsf](https://openreview.net/forum?id=BZ5a1r-kVsf)
+- **PDF**: [Introduction to Latent Variable Energy-Based Models: A Path Towards Autonomous Machine Intelligence](https://arxiv.org/abs/2306.02572))
 
-### 部署到 GitHub Pages
-
-1. 在 GitHub 上创建新仓库（例如 `ami-explorer`）
-2. 将本文件夹内容推送到仓库
-3. 进入 Settings → Pages → Source 选择 `main` 分支 → Save
-4. 等待几分钟后即可通过上述链接访问
-
-```bash
-git init
-git add .
-git commit -m "AMI Explorer - LeCun 2022 论文交互式解读"
-git branch -M main
-git remote add origin https://github.com/<your-username>/ami-explorer.git
-git push -u origin main
-```
 
 ### 技术栈
 
