@@ -1,0 +1,1437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AMI Explorer — LeCun 2022 论文交互式解读</title>
+<meta name="description" content="Yann LeCun A Path Towards Autonomous Machine Intelligence 深度交互式可视化解读"/>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%230a0a12' stroke='%2300eac6' stroke-width='2'/><circle cx='16' cy='16' r='4' fill='%2300eac6'/></svg>"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:#0a0a12;font-family:'DM Sans','Noto Sans SC',sans-serif;overflow-x:hidden}
+::selection{background:rgba(0,234,198,0.3);color:#fff}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#0a0a12}
+::-webkit-scrollbar-thumb{background:rgba(0,234,198,0.25);border-radius:3px}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes glow{0%,100%{text-shadow:0 0 40px rgba(0,234,198,0.25)}50%{text-shadow:0 0 70px rgba(0,234,198,0.45)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {
+  useState,
+  useEffect,
+  useRef
+} = React;
+const PAPER_LINK = "https://arxiv.org/abs/2306.02572";
+const SECTIONS = [{
+  id: "hero",
+  label: "\u6982\u89c8"
+}, {
+  id: "problem",
+  label: "\u6838\u5fc3\u95ee\u9898"
+}, {
+  id: "critique",
+  label: "\u8303\u5f0f\u6279\u5224"
+}, {
+  id: "architecture",
+  label: "\u8ba4\u77e5\u67b6\u6784"
+}, {
+  id: "jepa",
+  label: "JEPA\u539f\u7406"
+}, {
+  id: "hjepa",
+  label: "\u5206\u5c42JEPA"
+}, {
+  id: "energy",
+  label: "\u80fd\u91cf\u6a21\u578b"
+}, {
+  id: "training",
+  label: "\u8bad\u7ec3\u8303\u5f0f"
+}, {
+  id: "timeline",
+  label: "\u843d\u5730\u8fdb\u5c55"
+}, {
+  id: "debate",
+  label: "\u8def\u7ebf\u4e4b\u4e89"
+}];
+function NeuralBg() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    let w = c.width = window.innerWidth,
+      h = c.height = window.innerHeight;
+    const nodes = Array.from({
+      length: 55
+    }, () => ({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.35,
+      vy: (Math.random() - 0.5) * 0.35,
+      r: Math.random() * 2 + 1
+    }));
+    let raf;
+    const draw = () => {
+      ctx.clearRect(0, 0, w, h);
+      nodes.forEach(n => {
+        n.x += n.vx;
+        n.y += n.vy;
+        if (n.x < 0 || n.x > w) n.vx *= -1;
+        if (n.y < 0 || n.y > h) n.vy *= -1;
+      });
+      for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[i].x - nodes[j].x,
+          dy = nodes[i].y - nodes[j].y,
+          dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 140) {
+          ctx.beginPath();
+          ctx.moveTo(nodes[i].x, nodes[i].y);
+          ctx.lineTo(nodes[j].x, nodes[j].y);
+          ctx.strokeStyle = `rgba(0,234,198,${0.07 * (1 - dist / 140)})`;
+          ctx.stroke();
+        }
+      }
+      nodes.forEach(n => {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0,234,198,0.2)";
+        ctx.fill();
+      });
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    const onR = () => {
+      w = c.width = window.innerWidth;
+      h = c.height = window.innerHeight;
+    };
+    window.addEventListener("resize", onR);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onR);
+    };
+  }, []);
+  return /*#__PURE__*/React.createElement("canvas", {
+    ref: ref,
+    style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: "100%",
+      zIndex: 0,
+      pointerEvents: "none"
+    }
+  });
+}
+const MODULES = [{
+  key: "configurator",
+  label: "\u914d\u7f6e\u5668",
+  en: "Configurator",
+  color: "#ff6b6b",
+  x: 50,
+  y: 8,
+  desc: "\u8ba4\u77e5\u67b6\u6784\u7684\u300c\u6307\u6325\u5bb6\u300d\u3002\u6839\u636e\u5f53\u524d\u4efb\u52a1\u52a8\u6001\u8c03\u8282\u6240\u6709\u5176\u4ed6\u6a21\u5757\u7684\u53c2\u6570\u2014\u2014\u8bbe\u7f6e\u611f\u77e5\u7684\u6ce8\u610f\u7126\u70b9\u3001\u4e16\u754c\u6a21\u578b\u7684\u9884\u6d4b\u7cbe\u5ea6\u3001\u4ee3\u4ef7\u51fd\u6570\u7684\u6743\u91cd\u7b49\u3002\u7c7b\u6bd4\uff1a\u4eba\u5728\u9a7e\u9a76\u65f6\u4f1a\u81ea\u52a8\u8c03\u9ad8\u89c6\u89c9\u6ce8\u610f\u529b\u3001\u964d\u4f4e\u542c\u89c9\u5904\u7406\u3002",
+  detail: "\u8f93\u5165\uff1a\u6765\u81ea\u6240\u6709\u6a21\u5757\u7684\u72b6\u6001\u4fe1\u53f7\n\u8f93\u51fa\uff1a\u5404\u6a21\u5757\u7684\u8c03\u5236\u53c2\u6570\n\u5173\u952e\u7279\u5f81\uff1a\u552f\u4e00\u4e0e\u6240\u6709\u6a21\u5757\u53cc\u5411\u8fde\u63a5\u7684\u6a21\u5757"
+}, {
+  key: "perception",
+  label: "\u611f\u77e5",
+  en: "Perception",
+  color: "#4ecdc4",
+  x: 15,
+  y: 38,
+  desc: "\u5c06\u4f20\u611f\u5668\u8f93\u5165\u8f6c\u5316\u4e3a\u4e16\u754c\u72b6\u6001\u7684\u5185\u90e8\u8868\u5f81\u3002\u4e0d\u662f\u7b80\u5355\u7684\u7279\u5f81\u63d0\u53d6\u2014\u2014\u5b83\u4f30\u8ba1\u5f53\u524d\u4e16\u754c\u72b6\u6001\u4e2d\u4e0e\u4efb\u52a1\u76f8\u5173\u7684\u65b9\u9762\uff0c\u5e76\u53ef\u4ee5\u5728\u591a\u4e2a\u62bd\u8c61\u5c42\u7ea7\u4e0a\u8868\u5f81\u3002",
+  detail: "\u8f93\u5165\uff1a\u539f\u59cb\u611f\u5b98\u6570\u636e\uff08\u89c6\u89c9\u3001\u542c\u89c9\u7b49\uff09\n\u8f93\u51fa\uff1a\u5f53\u524d\u4e16\u754c\u72b6\u6001\u4f30\u8ba1 s(t)\n\u5173\u952e\u7279\u5f81\uff1a\u4ea7\u51fa\u7684\u662f\u300c\u72b6\u6001\u300d\u800c\u975e\u300c\u7279\u5f81\u300d"
+}, {
+  key: "world_model",
+  label: "\u4e16\u754c\u6a21\u578b",
+  en: "World Model",
+  color: "#00eac6",
+  x: 50,
+  y: 38,
+  desc: "\u6574\u4e2a\u67b6\u6784\u7684\u6838\u5fc3\u5f15\u64ce\u3002\u53cc\u91cd\u89d2\u8272\uff1a(1) \u8865\u5168\u611f\u77e5\u672a\u80fd\u63d0\u4f9b\u7684\u4fe1\u606f\uff1b(2) \u9884\u6d4b\u672a\u6765\u53ef\u80fd\u7684\u4e16\u754c\u72b6\u6001\u3002\u5b83\u672c\u8d28\u4e0a\u662f\u4e00\u4e2a\u300c\u5fc3\u7406\u6a21\u62df\u5668\u300d\u2014\u2014\u53ef\u4ee5\u5728\u8111\u5185\u300c\u60f3\u8c61\u300d\u4e0d\u540c\u884c\u52a8\u7684\u540e\u679c\u3002",
+  detail: "\u8f93\u5165\uff1a\u5f53\u524d\u72b6\u6001 + \u884c\u52a8\u5e8f\u5217 + \u6f5c\u53d8\u91cfz\n\u8f93\u51fa\uff1a\u9884\u6d4b\u7684\u672a\u6765\u72b6\u6001\u5e8f\u5217\n\u5173\u952e\u7279\u5f81\uff1a\u4f7f\u7528\u6f5c\u53d8\u91cfz\u8868\u793a\u4e0d\u786e\u5b9a\u6027"
+}, {
+  key: "cost",
+  label: "\u4ee3\u4ef7",
+  en: "Cost",
+  color: "#ffd93d",
+  x: 85,
+  y: 38,
+  desc: "\u9a71\u52a8\u884c\u4e3a\u7684\u5185\u5728\u52a8\u673a\u7cfb\u7edf\u3002\u5206\u4e3a\u4e24\u90e8\u5206\uff1a\u4e0d\u53ef\u8bad\u7ec3\u7684\u300c\u5185\u5728\u4ee3\u4ef7\u300d\uff08\u7c7b\u4f3c\u751f\u7269\u7684\u75db\u611f\u3001\u9965\u997f\u3001\u597d\u5947\u5fc3\uff09\u548c\u53ef\u8bad\u7ec3\u7684\u300c\u8bc4\u4ef7\u5668\u300d\uff08\u5b66\u4e60\u9884\u6d4b\u672a\u6765\u7684\u4ee3\u4ef7\u503c\uff09\u3002",
+  detail: "\u5185\u5728\u4ee3\u4ef7(Intrinsic Cost)\uff1a\u786c\u7f16\u7801\uff0c\u4e0d\u53ef\u5b66\u4e60\n\u8bc4\u4ef7\u5668(Critic)\uff1a\u53ef\u8bad\u7ec3\uff0c\u9884\u6d4b\u957f\u671f\u4ee3\u4ef7\n\u7c7b\u6bd4\uff1a\u9965\u997f\u611f\u662f\u5185\u5728\u4ee3\u4ef7\uff0c\u9884\u671f\u8212\u9002\u611f\u662f\u8bc4\u4ef7\u5668"
+}, {
+  key: "actor",
+  label: "\u884c\u52a8\u8005",
+  en: "Actor",
+  color: "#a855f7",
+  x: 15,
+  y: 68,
+  desc: "\u751f\u6210\u884c\u52a8\u5e8f\u5217\u7684\u6a21\u5757\u3002\u4e24\u79cd\u8fd0\u4f5c\u6a21\u5f0f\uff1aMode 1\u662f\u53cd\u5e94\u5f0f\uff08\u5feb\u901f\u76f4\u89c9\u54cd\u5e94\uff09\uff0cMode 2\u662f\u5ba1\u6155\u5f0f\uff08\u901a\u8fc7\u4e16\u754c\u6a21\u578b\u641c\u7d22\u6700\u4f18\u884c\u52a8\u5e8f\u5217\uff09\u3002",
+  detail: "Mode 1 (\u53cd\u5e94\u5f0f)\uff1a\u76f4\u63a5\u4ece\u72b6\u6001\u6620\u5c04\u5230\u52a8\u4f5c\nMode 2 (\u5ba1\u6155\u5f0f)\uff1a\u5229\u7528\u4e16\u754c\u6a21\u578b\u505a\u300c\u5fc3\u7406\u6f14\u7ec3\u300d\n\u7c7b\u6bd4\uff1a\u5f00\u8f66\u65f6\u7684\u672c\u80fd\u53cd\u5e94 vs \u89c4\u5212\u8def\u7ebf"
+}, {
+  key: "memory",
+  label: "\u77ed\u671f\u8bb0\u5fc6",
+  en: "Short-term Memory",
+  color: "#f472b6",
+  x: 85,
+  y: 68,
+  desc: "\u7ef4\u6301\u65f6\u95f4\u4e0a\u7684\u8fde\u8d2f\u6027\u3002\u5b58\u50a8\u5f53\u524d\u548c\u9884\u6d4b\u7684\u4e16\u754c\u72b6\u6001\u5e8f\u5217\u4ee5\u53ca\u5bf9\u5e94\u7684\u4ee3\u4ef7\u503c\u3002\u4e3a\u4e16\u754c\u6a21\u578b\u7684\u591a\u6b65\u9884\u6d4b\u548c\u884c\u52a8\u8005\u7684\u89c4\u5212\u63d0\u4f9b\u4e0a\u4e0b\u6587\u3002",
+  detail: "\u5b58\u50a8\u5185\u5bb9\uff1a\u72b6\u6001\u5e8f\u5217\u3001\u4ee3\u4ef7\u503c\u3001\u884c\u52a8\u5386\u53f2\n\u4f5c\u7528\uff1a\u652f\u6301\u4e16\u754c\u6a21\u578b\u7684\u591a\u6b65\u5c55\u5f00\u9884\u6d4b\n\u4e0e\u957f\u671f\u8bb0\u5fc6\u7684\u5173\u7cfb\uff1a\u8bba\u6587\u672a\u8be6\u7ec6\u5c55\u5f00"
+}];
+const CONNS = [{
+  from: "configurator",
+  to: "perception",
+  d: true
+}, {
+  from: "configurator",
+  to: "world_model",
+  d: true
+}, {
+  from: "configurator",
+  to: "cost",
+  d: true
+}, {
+  from: "configurator",
+  to: "actor",
+  d: true
+}, {
+  from: "configurator",
+  to: "memory",
+  d: true
+}, {
+  from: "perception",
+  to: "world_model"
+}, {
+  from: "world_model",
+  to: "cost"
+}, {
+  from: "world_model",
+  to: "memory"
+}, {
+  from: "cost",
+  to: "actor"
+}, {
+  from: "actor",
+  to: "world_model"
+}, {
+  from: "memory",
+  to: "world_model"
+}];
+function ArchDiagram() {
+  const [active, setActive] = useState(null);
+  const W = 560,
+    H = 420;
+  const pos = k => {
+    const m = MODULES.find(v => v.key === k);
+    return {
+      x: m.x / 100 * W,
+      y: m.y / 100 * H + 24
+    };
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 20,
+      flexWrap: "wrap",
+      alignItems: "flex-start"
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    viewBox: `0 0 ${W} ${H}`,
+    style: {
+      flex: "1 1 320px",
+      maxWidth: 560,
+      minWidth: 280
+    }
+  }, /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("marker", {
+    id: "ag",
+    markerWidth: "7",
+    markerHeight: "5",
+    refX: "7",
+    refY: "2.5",
+    orient: "auto"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M0,0 L7,2.5 L0,5",
+    fill: "rgba(0,234,198,0.5)"
+  })), /*#__PURE__*/React.createElement("marker", {
+    id: "ar",
+    markerWidth: "7",
+    markerHeight: "5",
+    refX: "7",
+    refY: "2.5",
+    orient: "auto"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M0,0 L7,2.5 L0,5",
+    fill: "rgba(255,107,107,0.35)"
+  }))), CONNS.map((c, i) => {
+    const a = pos(c.from),
+      b = pos(c.to),
+      on = active === c.from || active === c.to;
+    return /*#__PURE__*/React.createElement("line", {
+      key: i,
+      x1: a.x,
+      y1: a.y,
+      x2: b.x,
+      y2: b.y,
+      stroke: on ? c.d ? "#ff6b6b" : "#00eac6" : "rgba(255,255,255,0.1)",
+      strokeWidth: on ? 2.5 : 1,
+      strokeDasharray: c.d ? "5,3" : "none",
+      markerEnd: c.d ? "url(#ar)" : "url(#ag)",
+      style: {
+        transition: "all 0.3s"
+      }
+    });
+  }), MODULES.map(m => {
+    const p = pos(m.key),
+      on = active === m.key;
+    return /*#__PURE__*/React.createElement("g", {
+      key: m.key,
+      onClick: () => setActive(on ? null : m.key),
+      style: {
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("circle", {
+      cx: p.x,
+      cy: p.y,
+      r: on ? 36 : 30,
+      fill: on ? m.color + "30" : "rgba(16,16,26,0.85)",
+      stroke: m.color,
+      strokeWidth: on ? 2.5 : 1.5,
+      style: {
+        transition: "all 0.3s",
+        filter: on ? `drop-shadow(0 0 14px ${m.color}70)` : "none"
+      }
+    }), /*#__PURE__*/React.createElement("text", {
+      x: p.x,
+      y: p.y - 5,
+      textAnchor: "middle",
+      fill: "#fff",
+      fontSize: "12.5",
+      fontWeight: "600"
+    }, m.label), /*#__PURE__*/React.createElement("text", {
+      x: p.x,
+      y: p.y + 11,
+      textAnchor: "middle",
+      fill: "rgba(255,255,255,0.4)",
+      fontSize: "8.5"
+    }, m.en));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: "1 1 260px",
+      minWidth: 240
+    }
+  }, active ? (() => {
+    const m = MODULES.find(v => v.key === active);
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "rgba(16,16,26,0.9)",
+        border: `1px solid ${m.color}40`,
+        borderRadius: 12,
+        padding: "18px 20px",
+        animation: "fadeIn 0.3s"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 10,
+        height: 10,
+        borderRadius: "50%",
+        background: m.color
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: "#fff",
+        fontSize: 17,
+        fontWeight: 700
+      }
+    }, m.label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: "rgba(255,255,255,0.35)",
+        fontSize: 12
+      }
+    }, m.en)), /*#__PURE__*/React.createElement("p", {
+      style: {
+        color: "rgba(255,255,255,0.75)",
+        fontSize: 13.5,
+        lineHeight: 1.75,
+        margin: "0 0 12px"
+      }
+    }, m.desc), /*#__PURE__*/React.createElement("pre", {
+      style: {
+        color: m.color,
+        fontSize: 11.5,
+        lineHeight: 1.6,
+        whiteSpace: "pre-wrap",
+        margin: 0,
+        fontFamily: "'JetBrains Mono',monospace"
+      }
+    }, m.detail));
+  })() : /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.3)",
+      fontSize: 13,
+      padding: 20,
+      textAlign: "center"
+    }
+  }, "\u2190 \u70b9\u51fb\u4efb\u610f\u6a21\u5757\u67e5\u770b\u8be6\u60c5", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11
+    }
+  }, "\u865a\u7ebf = \u914d\u7f6e\u5668\u8c03\u5236\u4fe1\u53f7 | \u5b9e\u7ebf = \u6570\u636e\u6d41"))));
+}
+function JEPACompare() {
+  const [mode, setMode] = useState("jepa");
+  const tabs = [["jepa", "JEPA \u67b6\u6784"], ["gen", "\u751f\u6210\u5f0f\u67b6\u6784"], ["contrast", "\u5bf9\u6bd4\u5b66\u4e60"]];
+  const info = {
+    jepa: {
+      color: "#00eac6",
+      pros: ["\u5728\u8868\u5f81\u7a7a\u95f4\u9884\u6d4b\u2014\u2014\u5ffd\u7565\u4e0d\u53ef\u9884\u6d4b\u7684\u7ec6\u8282", "\u6f5c\u53d8\u91cf z \u5904\u7406\u56fa\u6709\u4e0d\u786e\u5b9a\u6027", "\u4e24\u4e2a\u7f16\u7801\u5668\u53ef\u4e0d\u540c\u67b6\u6784", "\u975e\u751f\u6210\u5f0f\u2014\u2014\u4e0d\u91cd\u6784\u6bcf\u4e2a\u50cf\u7d20", "\u975e\u5bf9\u6bd4\u5f0f\u2014\u2014\u4e0d\u9700\u8981\u8d1f\u6837\u672c", "\u53ef\u5806\u53e0\u5f62\u6210\u5c42\u7ea7\uff08H-JEPA\uff09"]
+    },
+    gen: {
+      color: "#ff6b6b",
+      pros: ["LLM/\u6269\u6563\u6a21\u578b\u5747\u5c5e\u6b64\u7c7b", "\u5fc5\u987b\u9884\u6d4b\u6240\u6709\u7ec6\u8282\uff08\u50cf\u7d20/token\uff09", "\u5927\u91cf\u8ba1\u7b97\u6d6a\u8d39\u5728\u4e0d\u53ef\u9884\u6d4b\u7684\u7ec6\u8282\u4e0a", "\u9762\u5bf9\u591a\u79cd\u53ef\u80fd\u7ed3\u679c\u65f6\u4f1a\u6a21\u7cca\u5316", "\u9ad8\u7ef4\u8fde\u7eed\u7a7a\u95f4\u4e2d\u6982\u7387\u5efa\u6a21\u6781\u96be"]
+    },
+    contrast: {
+      color: "#4ecdc4",
+      pros: ["CLIP\u3001SimCLR \u5c5e\u6b64\u7c7b", "\u9700\u8981\u5927\u91cf\u8d1f\u6837\u672c", "\u9ad8\u7ef4\u7a7a\u95f4\u4e2d\u8d1f\u6837\u672c\u6210\u672c\u7206\u70b8", "\u53ea\u80fd\u5224\u65ad\u76f8\u4f3c/\u4e0d\u76f8\u4f3c", "\u65e0\u9884\u6d4b\u80fd\u529b\u2014\u2014\u7f3a\u5c11\u60f3\u8c61"]
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginBottom: 18
+    }
+  }, tabs.map(([k, l]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    onClick: () => setMode(k),
+    style: {
+      padding: "7px 16px",
+      borderRadius: 18,
+      border: mode === k ? `1.5px solid ${info[k].color}` : "1px solid rgba(255,255,255,0.12)",
+      background: mode === k ? info[k].color + "15" : "transparent",
+      color: mode === k ? info[k].color : "rgba(255,255,255,0.45)",
+      cursor: "pointer",
+      fontSize: 13,
+      fontWeight: 600,
+      transition: "all 0.2s"
+    }
+  }, l))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 20,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 460 260",
+    style: {
+      flex: "1 1 280px",
+      maxWidth: 460
+    }
+  }, mode === "jepa" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+    x: "20",
+    y: "35",
+    width: "110",
+    height: "46",
+    rx: "7",
+    fill: "rgba(0,234,198,0.12)",
+    stroke: "#00eac6",
+    strokeWidth: "1.3"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "75",
+    y: "63",
+    textAnchor: "middle",
+    fill: "#00eac6",
+    fontSize: "12.5",
+    fontWeight: "600"
+  }, "Encoder x"), /*#__PURE__*/React.createElement("rect", {
+    x: "330",
+    y: "35",
+    width: "110",
+    height: "46",
+    rx: "7",
+    fill: "rgba(0,234,198,0.12)",
+    stroke: "#00eac6",
+    strokeWidth: "1.3"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "385",
+    y: "63",
+    textAnchor: "middle",
+    fill: "#00eac6",
+    fontSize: "12.5",
+    fontWeight: "600"
+  }, "Encoder y"), /*#__PURE__*/React.createElement("rect", {
+    x: "155",
+    y: "125",
+    width: "150",
+    height: "46",
+    rx: "7",
+    fill: "rgba(168,85,247,0.12)",
+    stroke: "#a855f7",
+    strokeWidth: "1.3"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "230",
+    y: "153",
+    textAnchor: "middle",
+    fill: "#a855f7",
+    fontSize: "12.5",
+    fontWeight: "600"
+  }, "Predictor + z"), /*#__PURE__*/React.createElement("text", {
+    x: "75",
+    y: "28",
+    textAnchor: "middle",
+    fill: "rgba(255,255,255,0.35)",
+    fontSize: "10"
+  }, "x"), /*#__PURE__*/React.createElement("text", {
+    x: "385",
+    y: "28",
+    textAnchor: "middle",
+    fill: "rgba(255,255,255,0.35)",
+    fontSize: "10"
+  }, "y"), /*#__PURE__*/React.createElement("line", {
+    x1: "75",
+    y1: "81",
+    x2: "190",
+    y2: "125",
+    stroke: "#00eac6",
+    strokeWidth: "1.2"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "305",
+    y1: "148",
+    x2: "385",
+    y2: "81",
+    stroke: "#ffd93d",
+    strokeWidth: "1.2",
+    strokeDasharray: "4,3"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "75",
+    y: "100",
+    fill: "rgba(255,255,255,0.3)",
+    fontSize: "9.5"
+  }, "sx"), /*#__PURE__*/React.createElement("text", {
+    x: "385",
+    y: "100",
+    fill: "rgba(255,255,255,0.3)",
+    fontSize: "9.5"
+  }, "sy"), /*#__PURE__*/React.createElement("rect", {
+    x: "155",
+    y: "200",
+    width: "150",
+    height: "34",
+    rx: "5",
+    fill: "rgba(255,217,61,0.08)",
+    stroke: "#ffd93d",
+    strokeWidth: "0.8"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "230",
+    y: "222",
+    textAnchor: "middle",
+    fill: "#ffd93d",
+    fontSize: "11.5"
+  }, "D(sy, sy) min"), /*#__PURE__*/React.createElement("text", {
+    x: "230",
+    y: "190",
+    fill: "rgba(255,255,255,0.25)",
+    fontSize: "9.5"
+  }, "\u5728\u8868\u5f81\u7a7a\u95f4\u8ba1\u7b97\u80fd\u91cf")), mode === "gen" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+    x: "30",
+    y: "40",
+    width: "110",
+    height: "46",
+    rx: "7",
+    fill: "rgba(255,107,107,0.12)",
+    stroke: "#ff6b6b",
+    strokeWidth: "1.3"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "85",
+    y: "68",
+    textAnchor: "middle",
+    fill: "#ff6b6b",
+    fontSize: "12.5",
+    fontWeight: "600"
+  }, "Encoder"), /*#__PURE__*/React.createElement("rect", {
+    x: "175",
+    y: "40",
+    width: "110",
+    height: "46",
+    rx: "7",
+    fill: "rgba(255,107,107,0.12)",
+    stroke: "#ff6b6b",
+    strokeWidth: "1.3"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "230",
+    y: "68",
+    textAnchor: "middle",
+    fill: "#ff6b6b",
+    fontSize: "12.5",
+    fontWeight: "600"
+  }, "Decoder"), /*#__PURE__*/React.createElement("line", {
+    x1: "140",
+    y1: "63",
+    x2: "175",
+    y2: "63",
+    stroke: "#ff6b6b",
+    strokeWidth: "1.5"
+  }), /*#__PURE__*/React.createElement("rect", {
+    x: "320",
+    y: "40",
+    width: "100",
+    height: "46",
+    rx: "7",
+    fill: "rgba(255,255,255,0.04)",
+    stroke: "rgba(255,255,255,0.15)",
+    strokeWidth: "1"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "370",
+    y: "68",
+    textAnchor: "middle",
+    fill: "rgba(255,255,255,0.4)",
+    fontSize: "12.5"
+  }, "y"), /*#__PURE__*/React.createElement("rect", {
+    x: "160",
+    y: "130",
+    width: "220",
+    height: "34",
+    rx: "5",
+    fill: "rgba(255,107,107,0.08)",
+    stroke: "#ff6b6b",
+    strokeWidth: "0.8"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "270",
+    y: "152",
+    textAnchor: "middle",
+    fill: "#ff6b6b",
+    fontSize: "11.5"
+  }, "\u50cf\u7d20\u7ea7\u91cd\u6784\u635f\u5931"), /*#__PURE__*/React.createElement("text", {
+    x: "230",
+    y: "195",
+    textAnchor: "middle",
+    fill: "rgba(255,255,255,0.3)",
+    fontSize: "11"
+  }, "\u26a0 \u5fc5\u987b\u9884\u6d4b\u6bcf\u4e2a\u50cf\u7d20"), /*#__PURE__*/React.createElement("text", {
+    x: "230",
+    y: "215",
+    textAnchor: "middle",
+    fill: "rgba(255,255,255,0.3)",
+    fontSize: "11"
+  }, "\u26a0 \u65e0\u6cd5\u5904\u7406\u672c\u8d28\u4e0d\u786e\u5b9a\u6027")), mode === "contrast" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+    x: "30",
+    y: "40",
+    width: "110",
+    height: "46",
+    rx: "7",
+    fill: "rgba(78,205,196,0.12)",
+    stroke: "#4ecdc4",
+    strokeWidth: "1.3"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "85",
+    y: "68",
+    textAnchor: "middle",
+    fill: "#4ecdc4",
+    fontSize: "12.5",
+    fontWeight: "600"
+  }, "Encoder x"), /*#__PURE__*/React.createElement("rect", {
+    x: "320",
+    y: "40",
+    width: "110",
+    height: "46",
+    rx: "7",
+    fill: "rgba(78,205,196,0.12)",
+    stroke: "#4ecdc4",
+    strokeWidth: "1.3"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "375",
+    y: "68",
+    textAnchor: "middle",
+    fill: "#4ecdc4",
+    fontSize: "12.5",
+    fontWeight: "600"
+  }, "Encoder y"), /*#__PURE__*/React.createElement("text", {
+    x: "375",
+    y: "28",
+    fill: "rgba(255,255,255,0.35)",
+    fontSize: "10"
+  }, "y+/y-"), /*#__PURE__*/React.createElement("rect", {
+    x: "135",
+    y: "125",
+    width: "190",
+    height: "34",
+    rx: "5",
+    fill: "rgba(78,205,196,0.08)",
+    stroke: "#4ecdc4",
+    strokeWidth: "0.8"
+  }), /*#__PURE__*/React.createElement("text", {
+    x: "230",
+    y: "147",
+    textAnchor: "middle",
+    fill: "#4ecdc4",
+    fontSize: "11.5"
+  }, "\u6b63\u6837\u672c\u62c9\u8fd1 / \u8d1f\u6837\u672c\u63a8\u8fdc"), /*#__PURE__*/React.createElement("text", {
+    x: "230",
+    y: "190",
+    textAnchor: "middle",
+    fill: "rgba(255,255,255,0.3)",
+    fontSize: "11"
+  }, "\u26a0 \u9ad8\u7ef4\u8d1f\u6837\u672c\u6210\u672c\u6781\u9ad8"), /*#__PURE__*/React.createElement("text", {
+    x: "230",
+    y: "210",
+    textAnchor: "middle",
+    fill: "rgba(255,255,255,0.3)",
+    fontSize: "11"
+  }, "\u26a0 \u65e0\u9884\u6d4b\u80fd\u529b"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: "1 1 200px",
+      minWidth: 190
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: info[mode].color + "0a",
+      border: `1px solid ${info[mode].color}25`,
+      borderRadius: 10,
+      padding: 14
+    }
+  }, /*#__PURE__*/React.createElement("h4", {
+    style: {
+      color: info[mode].color,
+      margin: "0 0 8px",
+      fontSize: 14
+    }
+  }, mode === "jepa" ? "JEPA \u4f18\u52bf" : mode === "gen" ? "\u751f\u6210\u5f0f\u95ee\u9898" : "\u5bf9\u6bd4\u5b66\u4e60\u95ee\u9898"), /*#__PURE__*/React.createElement("ul", {
+    style: {
+      color: "rgba(255,255,255,0.65)",
+      fontSize: 12.5,
+      lineHeight: 1.85,
+      paddingLeft: 16,
+      margin: 0
+    }
+  }, info[mode].pros.map((p, i) => /*#__PURE__*/React.createElement("li", {
+    key: i
+  }, p)))))));
+}
+function HJEPAViz() {
+  const [hover, setHover] = useState(null);
+  const levels = [{
+    label: "Level 4: \u5929\u7ea7",
+    en: "Goal plans",
+    color: "#ff6b6b",
+    example: "\u5b66\u4f1a\u6cd5\u5f0f\u6599\u7406",
+    ts: "~days"
+  }, {
+    label: "Level 3: \u5c0f\u65f6\u7ea7",
+    en: "Activity plans",
+    color: "#ffd93d",
+    example: "\u51c6\u5907\u65e9\u9910",
+    ts: "~1hr"
+  }, {
+    label: "Level 2: \u5206\u949f\u7ea7",
+    en: "Task steps",
+    color: "#a855f7",
+    example: "\u5236\u4f5c\u714e\u997c\u9762\u7cca",
+    ts: "~1min"
+  }, {
+    label: "Level 1: \u79d2\u7ea7",
+    en: "Motor actions",
+    color: "#00eac6",
+    example: "\u7ffb\u52a8\u714e\u997c",
+    ts: "~1s"
+  }, {
+    label: "Level 0: \u6beb\u79d2\u7ea7",
+    en: "Muscle movements",
+    color: "#4ecdc4",
+    example: "\u624b\u6307\u79fb\u52a8\u8f68\u8ff9",
+    ts: "~10ms"
+  }];
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 5
+    }
+  }, levels.map((lv, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    onMouseEnter: () => setHover(i),
+    onMouseLeave: () => setHover(null),
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 14,
+      padding: "11px 16px",
+      borderRadius: 9,
+      background: hover === i ? `${lv.color}15` : "rgba(255,255,255,0.025)",
+      border: `1px solid ${hover === i ? lv.color + "50" : "rgba(255,255,255,0.05)"}`,
+      cursor: "pointer",
+      transition: "all 0.25s"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 48,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: lv.color,
+      fontWeight: 700,
+      fontFamily: "monospace"
+    }
+  }, lv.ts), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 16 + (4 - i) * 14,
+      height: 3.5,
+      borderRadius: 2,
+      background: lv.color,
+      margin: "4px auto 0",
+      opacity: 0.55
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "#fff",
+      fontSize: 13.5,
+      fontWeight: 600
+    }
+  }, lv.label), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.35)",
+      fontSize: 11.5
+    }
+  }, lv.en)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.45)",
+      fontSize: 12.5
+    }
+  }, "\u4f8b: ", lv.example)))), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: "rgba(255,255,255,0.4)",
+      fontSize: 12.5,
+      marginTop: 12,
+      lineHeight: 1.7
+    }
+  }, "\u2191 \u9ad8\u5c42\u7ea7\u505a\u957f\u65f6\u95f4\u8de8\u5ea6\u7684\u62bd\u8c61\u9884\u6d4b\uff0c\u4f4e\u5c42\u7ea7\u505a\u77ed\u65f6\u95f4\u7cbe\u7ec6\u9884\u6d4b\u3002\u6bcf\u4e00\u5c42JEPA\u7684\u8f93\u51fa\u4f5c\u4e3a\u4e0a\u4e00\u5c42\u7684\u8f93\u5165\u3002"));
+}
+function EnergyViz() {
+  const [dragging, setDragging] = useState(false);
+  const [bx, setBx] = useState(200);
+  const W = 480,
+    H = 170;
+  const E = x => 28 * Math.sin(x / 38) * Math.cos(x / 65) + 18 * Math.sin(x / 24) + 85;
+  const pts = Array.from({
+    length: W
+  }, (_, i) => `${i},${E(i)}`).join(" ");
+  const by = E(bx);
+  const handleMove = (clientX, rect) => {
+    if (!dragging) return;
+    setBx(Math.max(8, Math.min(W - 8, (clientX - rect.left) / rect.width * W)));
+  };
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: "rgba(255,255,255,0.45)",
+      fontSize: 12.5,
+      marginBottom: 10
+    }
+  }, "\u62d6\u52a8\u7403\u4f53\u63a2\u7d22\u80fd\u91cf\u5730\u5f62 \u2014 \u7cfb\u7edf\u901a\u8fc7\u68af\u5ea6\u4e0b\u964d\u5bfb\u627e\u6700\u4f4e\u80fd\u91cf\u70b9"), /*#__PURE__*/React.createElement("svg", {
+    viewBox: `0 0 ${W} ${H}`,
+    style: {
+      width: "100%",
+      maxWidth: W,
+      cursor: dragging ? "grabbing" : "default",
+      touchAction: "none"
+    },
+    onMouseMove: e => handleMove(e.clientX, e.currentTarget.getBoundingClientRect()),
+    onTouchMove: e => handleMove(e.touches[0].clientX, e.currentTarget.getBoundingClientRect()),
+    onMouseUp: () => setDragging(false),
+    onMouseLeave: () => setDragging(false),
+    onTouchEnd: () => setDragging(false)
+  }, /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("linearGradient", {
+    id: "eg",
+    x1: "0",
+    y1: "0",
+    x2: "0",
+    y2: "1"
+  }, /*#__PURE__*/React.createElement("stop", {
+    offset: "0%",
+    stopColor: "rgba(0,234,198,0.2)"
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: "100%",
+    stopColor: "transparent"
+  }))), /*#__PURE__*/React.createElement("polyline", {
+    points: pts,
+    fill: "none",
+    stroke: "#00eac6",
+    strokeWidth: "1.8"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: `0,${H} ${pts} ${W},${H}`,
+    fill: "url(#eg)"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: bx,
+    cy: by,
+    r: "7.5",
+    fill: "#ffd93d",
+    stroke: "#fff",
+    strokeWidth: "2",
+    style: {
+      cursor: "grab",
+      filter: "drop-shadow(0 0 8px rgba(255,217,61,0.5))"
+    },
+    onMouseDown: e => {
+      e.preventDefault();
+      setDragging(true);
+    },
+    onTouchStart: e => {
+      e.preventDefault();
+      setDragging(true);
+    }
+  }), /*#__PURE__*/React.createElement("text", {
+    x: bx,
+    y: by - 14,
+    textAnchor: "middle",
+    fill: "#ffd93d",
+    fontSize: "9.5",
+    fontWeight: "600"
+  }, "E=" + E(bx).toFixed(1)), /*#__PURE__*/React.createElement("text", {
+    x: W / 2,
+    y: H - 5,
+    textAnchor: "middle",
+    fill: "rgba(255,255,255,0.25)",
+    fontSize: "9.5"
+  }, "Action Space")));
+}
+const TL = [{
+  year: "2022.06",
+  title: "\u7acb\u573a\u8bba\u6587\u53d1\u5e03",
+  desc: "62\u9875\u8bba\u6587\u63d0\u51faAMI\u67b6\u6784\u84dd\u56fe\uff0c\u5f15\u5165JEPA",
+  color: "#ff6b6b"
+}, {
+  year: "2023.06",
+  title: "I-JEPA",
+  desc: "\u56fe\u50cf\u9886\u57dfJEPA\uff0c\u8bc1\u660e\u8868\u5f81\u7a7a\u95f4\u9884\u6d4b\u5b66\u5230\u66f4\u8bed\u4e49\u5316\u7684\u8868\u5f81",
+  color: "#4ecdc4"
+}, {
+  year: "2024.02",
+  title: "V-JEPA",
+  desc: "\u89c6\u9891JEPA\uff0cK400\u8fbe82.1%\u3001SSv2\u8fbe71.2%\uff0c\u51bb\u7ed3\u8bc4\u4f30\u8d85\u8d8a\u6b64\u524d\u6700\u4f73",
+  color: "#00eac6"
+}, {
+  year: "2025.06",
+  title: "V-JEPA 2",
+  desc: "100\u4e07\u5c0f\u65f6\u89c6\u9891\u9884\u8bad\u7ec3\uff0c62\u5c0f\u65f6\u673a\u5668\u4eba\u6570\u636e\u5373\u53ef\u96f6\u6837\u672c\u64cd\u63a7",
+  color: "#a855f7"
+}, {
+  year: "2025.12",
+  title: "VL-JEPA",
+  desc: "\u89c6\u89c9-\u8bed\u8a00JEPA\uff0c\u9884\u6d4b\u8fde\u7eed\u5d4c\u5165\u800c\u975etoken\uff0c\u6570\u636e\u6548\u7387\u5927\u5e45\u8d85\u8d8aVLM",
+  color: "#ffd93d"
+}, {
+  year: "\u672a\u6765",
+  title: "H-JEPA + \u591a\u6a21\u6001",
+  desc: "\u5206\u5c42\u65f6\u7a7a\u9884\u6d4b + \u89c6\u542c\u89e6\u591a\u611f\u5b98\u878d\u5408 \u2192 \u901a\u7528\u4e16\u754c\u6a21\u578b",
+  color: "#f472b6"
+}];
+function Sec({
+  id,
+  title,
+  sub,
+  children
+}) {
+  return /*#__PURE__*/React.createElement("section", {
+    id: id,
+    style: {
+      marginBottom: 64,
+      scrollMarginTop: 72
+    }
+  }, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      color: "#fff",
+      fontSize: 26,
+      fontWeight: 800,
+      margin: "0 0 4px",
+      letterSpacing: "-0.02em",
+      fontFamily: "'Playfair Display',serif"
+    }
+  }, title), sub && /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: "rgba(0,234,198,0.65)",
+      fontSize: 13.5,
+      margin: "0 0 18px",
+      fontWeight: 500
+    }
+  }, sub), children);
+}
+function P({
+  children
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.7)",
+      fontSize: 14.5,
+      lineHeight: 1.85,
+      maxWidth: 700
+    }
+  }, children);
+}
+function Hi({
+  children,
+  c = "#00eac6"
+}) {
+  return /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: c,
+      fontWeight: 600
+    }
+  }, children);
+}
+function App() {
+  const scrollTo = id => document.getElementById(id)?.scrollIntoView({
+    behavior: "smooth"
+  });
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#0a0a12",
+      minHeight: "100vh",
+      fontFamily: "'DM Sans','Noto Sans SC',sans-serif",
+      position: "relative"
+    }
+  }, /*#__PURE__*/React.createElement(NeuralBg, null), /*#__PURE__*/React.createElement("nav", {
+    style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 100,
+      background: "rgba(10,10,18,0.9)",
+      backdropFilter: "blur(14px)",
+      borderBottom: "1px solid rgba(255,255,255,0.05)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 920,
+      margin: "0 auto",
+      padding: "8px 20px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      flexWrap: "wrap",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 7,
+      height: 7,
+      borderRadius: "50%",
+      background: "#00eac6",
+      boxShadow: "0 0 8px #00eac6"
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#fff",
+      fontSize: 13,
+      fontWeight: 700,
+      letterSpacing: "0.05em"
+    }
+  }, "AMI EXPLORER")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 3,
+      flexWrap: "wrap",
+      alignItems: "center"
+    }
+  }, SECTIONS.map(s => /*#__PURE__*/React.createElement("button", {
+    key: s.id,
+    onClick: () => scrollTo(s.id),
+    style: {
+      padding: "4px 10px",
+      borderRadius: 12,
+      border: "none",
+      background: "transparent",
+      color: "rgba(255,255,255,0.45)",
+      cursor: "pointer",
+      fontSize: 11.5,
+      fontWeight: 500
+    },
+    onMouseEnter: e => {
+      e.target.style.color = "#00eac6";
+      e.target.style.background = "rgba(0,234,198,0.07)";
+    },
+    onMouseLeave: e => {
+      e.target.style.color = "rgba(255,255,255,0.45)";
+      e.target.style.background = "transparent";
+    }
+  }, s.label))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      zIndex: 1,
+      maxWidth: 920,
+      margin: "0 auto",
+      padding: "90px 20px 50px"
+    }
+  }, /*#__PURE__*/React.createElement("section", {
+    id: "hero",
+    style: {
+      textAlign: "center",
+      padding: "50px 0 70px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "rgba(0,234,198,0.55)",
+      letterSpacing: "0.18em",
+      fontWeight: 600,
+      marginBottom: 14,
+      fontFamily: "'JetBrains Mono',monospace"
+    }
+  }, "YANN LECUN \xB7 2022 \xB7 POSITION PAPER"), /*#__PURE__*/React.createElement("h1", {
+    style: {
+      fontSize: "clamp(26px,4.5vw,48px)",
+      fontWeight: 900,
+      color: "#fff",
+      margin: "0 0 18px",
+      lineHeight: 1.15,
+      fontFamily: "'Playfair Display',serif",
+      animation: "glow 4s ease-in-out infinite"
+    }
+  }, "A Path Towards", /*#__PURE__*/React.createElement("br", null), "Autonomous Machine Intelligence"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: "rgba(255,255,255,0.4)",
+      fontSize: 15,
+      maxWidth: 580,
+      margin: "0 auto 24px",
+      lineHeight: 1.7
+    }
+  }, "\u901a\u5f80\u81ea\u4e3b\u673a\u5668\u667a\u80fd\u4e4b\u8def \u2014 \u6df1\u5ea6\u4ea4\u4e92\u5f0f\u89e3\u8bfb", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12.5
+    }
+  }, "\u878d\u5408\u4e16\u754c\u6a21\u578b\u3001JEPA\u67b6\u6784\u4e0e\u5185\u5728\u52a8\u673a\u7684\u7edf\u4e00\u8ba4\u77e5\u6846\u67b6")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      justifyContent: "center",
+      flexWrap: "wrap",
+      marginBottom: 24
+    }
+  }, ["\u4e16\u754c\u6a21\u578b", "JEPA", "\u81ea\u76d1\u7763\u5b66\u4e60", "\u80fd\u91cf\u6a21\u578b", "\u5206\u5c42\u89c4\u5212", "\u5185\u5728\u52a8\u673a"].map(t => /*#__PURE__*/React.createElement("span", {
+    key: t,
+    style: {
+      padding: "5px 14px",
+      borderRadius: 18,
+      border: "1px solid rgba(0,234,198,0.22)",
+      color: "rgba(0,234,198,0.65)",
+      fontSize: 11.5,
+      fontWeight: 600
+    }
+  }, t))), /*#__PURE__*/React.createElement("a", {
+    href: PAPER_LINK,
+    target: "_blank",
+    rel: "noopener noreferrer",
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      padding: "8px 18px",
+      borderRadius: 20,
+      border: "1px solid rgba(0,234,198,0.35)",
+      background: "rgba(0,234,198,0.08)",
+      color: "#00eac6",
+      fontSize: 13,
+      fontWeight: 600,
+      textDecoration: "none"
+    }
+  }, "\u2197 \u9605\u8bfb\u8bba\u6587 (arXiv)")), /*#__PURE__*/React.createElement(Sec, {
+    id: "problem",
+    title: "\u6838\u5fc3\u95ee\u9898",
+    sub: "\u4e3a\u4ec0\u4e48\u5f53\u524dAI\u8303\u5f0f\u4e0d\u591f\uff1f"
+  }, /*#__PURE__*/React.createElement(P, null, /*#__PURE__*/React.createElement("p", null, "\u4e00\u4e2a17\u5c81\u9752\u5c11\u5e74\u5927\u7ea6\u9700\u8981", /*#__PURE__*/React.createElement(Hi, {
+    c: "#ffd93d"
+  }, "20\u5c0f\u65f6\u7ec3\u4e60"), "\u5c31\u80fd\u5b66\u4f1a\u5f00\u8f66\uff0c\u800c\u6700\u5148\u8fdb\u7684\u81ea\u52a8\u9a7e\u9a76\u7cfb\u7edf\u9700\u8981\u6570\u767e\u4e07\u5c0f\u65f6\u8bad\u7ec3\u6570\u636e\u4ecd\u65e0\u6cd5\u5904\u7406\u6240\u6709\u8fb9\u7f18\u60c5\u51b5\u3002"), /*#__PURE__*/React.createElement("p", null, "LeCun\u8ba4\u4e3a\uff0c\u4eba\u7c7b\u62e5\u6709\u4e00\u79cd\u673a\u5668\u5b8c\u5168\u7f3a\u5931\u7684\u80fd\u529b\u2014\u2014", /*#__PURE__*/React.createElement(Hi, null, "\u4e16\u754c\u6a21\u578b\uff08World Model\uff09"), "\uff0c\u4e00\u79cd\u5173\u4e8e\u300c\u4e16\u754c\u5982\u4f55\u8fd0\u4f5c\u300d\u7684\u5185\u90e8\u6a21\u62df\u5668\u3002"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      paddingLeft: 14,
+      borderLeft: "2px solid rgba(0,234,198,0.25)"
+    }
+  }, /*#__PURE__*/React.createElement(Hi, null, "1."), " \u5982\u4f55\u4e3b\u8981\u901a\u8fc7\u89c2\u5bdf\u5b66\u4e60\u4e16\u754c\u8868\u5f81\u548c\u9884\u6d4b\uff1f", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement(Hi, null, "2."), " \u5982\u4f55\u4ee5\u517c\u5bb9\u68af\u5ea6\u5b66\u4e60\u7684\u65b9\u5f0f\u63a8\u7406\u548c\u89c4\u5212\uff1f", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement(Hi, null, "3."), " \u5982\u4f55\u5728\u591a\u62bd\u8c61\u5c42\u7ea7\u548c\u65f6\u95f4\u5c3a\u5ea6\u4e0a\u8868\u5f81\u611f\u77e5\u548c\u884c\u52a8\u8ba1\u5212\uff1f"))), /*#__PURE__*/React.createElement(Sec, {
+    id: "critique",
+    title: "\u5bf9\u4e3b\u6d41\u8303\u5f0f\u7684\u7cfb\u7edf\u6279\u5224",
+    sub: "\u751f\u6210\u5f0f vs \u5bf9\u6bd4\u5f0f vs JEPA \u2014 \u70b9\u51fb\u5207\u6362"
+  }, /*#__PURE__*/React.createElement(JEPACompare, null)), /*#__PURE__*/React.createElement(Sec, {
+    id: "architecture",
+    title: "\u81ea\u4e3b\u667a\u80fd\u4f53\u8ba4\u77e5\u67b6\u6784",
+    sub: "\u516d\u6a21\u5757\u7cfb\u7edf \u2014 \u70b9\u51fb\u6a21\u5757\u67e5\u770b\u8be6\u60c5"
+  }, /*#__PURE__*/React.createElement(P, null, /*#__PURE__*/React.createElement("p", null, "LeCun\u63d0\u51fa\u4e86\u53d7\u8ba4\u77e5\u79d1\u5b66\u542f\u53d1\u7684\u6a21\u5757\u5316\u67b6\u6784\u3002", /*#__PURE__*/React.createElement(Hi, null, "\u6240\u6709\u6a21\u5757\u90fd\u88ab\u5047\u5b9a\u4e3a\u53ef\u5fae\u5206\u7684"), "\u2014\u2014\u68af\u5ea6\u4fe1\u53f7\u53ef\u4ee5\u5728\u6a21\u5757\u95f4\u6d41\u52a8\uff0c\u5b9e\u73b0\u7aef\u5230\u7aef\u5b66\u4e60\u3002")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 18
+    }
+  }, /*#__PURE__*/React.createElement(ArchDiagram, null))), /*#__PURE__*/React.createElement(Sec, {
+    id: "jepa",
+    title: "JEPA \u6838\u5fc3\u539f\u7406",
+    sub: "Joint Embedding Predictive Architecture"
+  }, /*#__PURE__*/React.createElement(P, null, /*#__PURE__*/React.createElement("p", null, "JEPA\u7684\u6838\u5fc3\u6d1e\u5bdf\uff1a", /*#__PURE__*/React.createElement(Hi, null, "\u4e0d\u8981\u9884\u6d4b\u50cf\u7d20\uff0c\u9884\u6d4b\u610f\u4e49"), "。"), /*#__PURE__*/React.createElement("p", null, "\u4f60\u770b\u5230\u4e00\u4e2a\u4eba\u628a\u5496\u5561\u676f\u63a8\u5411\u684c\u8fb9\uff0c\u4f60\u7684\u5927\u8111\u4e0d\u4f1a\u9884\u6d4b\u676f\u5b50\u8868\u9762\u6bcf\u4e2a\u50cf\u7d20\u7684\u53d8\u5316\u2014\u2014\u4f60\u9884\u6d4b\u7684\u662f\u300c\u676f\u5b50\u53ef\u80fd\u4f1a\u6389\u4e0b\u53bb\u300d\u8fd9\u4e2a\u62bd\u8c61\u7ed3\u679c\u3002"), /*#__PURE__*/React.createElement("p", null, "\u6280\u672f\u4e0a\uff0c\u4e24\u4e2a\u7f16\u7801\u5668\u5c06x\u548cy\u6620\u5c04\u5230\u8868\u5f81\u7a7a\u95f4\uff0c\u9884\u6d4b\u5668\u4eceSx\u9884\u6d4bSy\u3002\u5173\u952e\u521b\u65b0\u662f", /*#__PURE__*/React.createElement(Hi, {
+    c: "#a855f7"
+  }, "\u6f5c\u53d8\u91cfz"), "\u2014\u2014\u7f16\u7801\u9884\u6d4b\u7684\u4e0d\u786e\u5b9a\u6027\u3002\u5bf9\u540c\u4e00\u5f53\u524d\u72b6\u6001\uff0c\u6539\u53d8z\u4ea7\u751f\u4e0d\u540c\u9884\u6d4b\uff0c\u5bf9\u5e94\u591a\u79cd\u53ef\u80fd\u7684\u672a\u6765\u3002")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 18,
+      padding: 16,
+      background: "rgba(168,85,247,0.06)",
+      border: "1px solid rgba(168,85,247,0.18)",
+      borderRadius: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "#a855f7",
+      fontSize: 13.5,
+      fontWeight: 700,
+      marginBottom: 8
+    }
+  }, "\u5173\u952e\u533a\u5206\uff1aJEPA vs JEA"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.6)",
+      fontSize: 12.5,
+      lineHeight: 1.8
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: "#4ecdc4"
+    }
+  }, "JEA\uff08\u5982CLIP\uff09"), "\uff1a\u4e24\u4e2a\u7f16\u7801\u5668 + \u76f4\u63a5\u6bd4\u8f83\u5d4c\u5165\u76f8\u4f3c\u5ea6\u3002\u53ea\u80fd\u5224\u65ad\u300c\u76f8\u4e0d\u76f8\u4f3c\u300d\u3002", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: "#00eac6"
+    }
+  }, "JEPA"), "\uff1a\u4e24\u4e2a\u7f16\u7801\u5668 + ", /*#__PURE__*/React.createElement("strong", null, "\u9884\u6d4b\u5668"), "\u3002\u80fd\u4ece\u8868\u5f81", /*#__PURE__*/React.createElement("strong", null, "\u9884\u6d4b"), "\u53e6\u4e00\u4e2a\u8868\u5f81\u3002\u8fd9\u662f\u6784\u5efa\u4e16\u754c\u6a21\u578b\u7684\u5173\u952e\u3002"))), /*#__PURE__*/React.createElement(Sec, {
+    id: "hjepa",
+    title: "\u5206\u5c42JEPA\uff08H-JEPA\uff09",
+    sub: "\u591a\u65f6\u95f4\u5c3a\u5ea6\u7684\u62bd\u8c61\u9884\u6d4b \u2014 \u60ac\u505c\u67e5\u770b"
+  }, /*#__PURE__*/React.createElement(P, null, /*#__PURE__*/React.createElement("p", null, "\u5355\u5c42JEPA\u53ea\u80fd\u5728\u4e00\u4e2a\u62bd\u8c61\u5c42\u7ea7\u505a\u9884\u6d4b\u3002\u771f\u5b9e\u667a\u80fd\u9700\u8981", /*#__PURE__*/React.createElement(Hi, null, "\u591a\u5c3a\u5ea6\u89c4\u5212"), "\u2014\u2014\u4ece\u300c\u660e\u5929\u505a\u6cd5\u5f0f\u6599\u7406\u300d\u5230\u300c\u73b0\u5728\u53f3\u624b\u63e1\u4f4f\u9505\u67c4\u5411\u5de6\u503e\u65993\u5ea6\u300d\u3002")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14
+    }
+  }, /*#__PURE__*/React.createElement(HJEPAViz, null))), /*#__PURE__*/React.createElement(Sec, {
+    id: "energy",
+    title: "\u57fa\u4e8e\u80fd\u91cf\u7684\u63a8\u7406\u4e0e\u89c4\u5212",
+    sub: "\u63a8\u7406 = \u80fd\u91cf\u6700\u5c0f\u5316 \u2014 \u62d6\u52a8\u63a2\u7d22"
+  }, /*#__PURE__*/React.createElement(P, null, /*#__PURE__*/React.createElement("p", null, "LeCun\u63d0\u51fa\u7edf\u4e00\u6846\u67b6\uff1a", /*#__PURE__*/React.createElement(Hi, null, "\u63a8\u7406\u548c\u89c4\u5212\u672c\u8d28\u4e0a\u90fd\u662f\u80fd\u91cf\u6700\u5c0f\u5316\u95ee\u9898"), "\u3002\u4e16\u754c\u6a21\u578b\u4e3a\u6bcf\u4e2a\u884c\u52a8\u5e8f\u5217\u8ba1\u7b97\u300c\u80fd\u91cf\u300d\uff0c\u884c\u52a8\u8005\u627e\u5230\u4f7f\u603b\u80fd\u91cf\u6700\u4f4e\u7684\u8def\u5f84\u3002")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14
+    }
+  }, /*#__PURE__*/React.createElement(EnergyViz, null))), /*#__PURE__*/React.createElement(Sec, {
+    id: "training",
+    title: "\u8bad\u7ec3\u8303\u5f0f\uff1a\u81ea\u76d1\u7763\u5b66\u4e60",
+    sub: "\u86cb\u7cd5\u7684\u4e3b\u4f53"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 14,
+      flexWrap: "wrap",
+      marginTop: 4
+    }
+  }, [{
+    layer: "\u86cb\u7cd5\u4e3b\u4f53",
+    name: "\u81ea\u76d1\u7763\u5b66\u4e60",
+    pct: "~90%",
+    color: "#00eac6",
+    desc: "\u9884\u6d4b\u6570\u636e\u81ea\u8eab\u7684\u7f3a\u5931\u90e8\u5206\u5b66\u4e60\u4e16\u754c\u7ed3\u6784\u3002\u65e0\u9700\u6807\u6ce8\u3002"
+  }, {
+    layer: "\u86cb\u7cd5\u7cd6\u971c",
+    name: "\u76d1\u7763\u5b66\u4e60",
+    pct: "~9%",
+    color: "#ffd93d",
+    desc: "\u4eba\u5de5\u6807\u6ce8\u8bad\u7ec3\u3002\u4fe1\u606f\u91cf\u6709\u9650\uff0c\u6807\u6ce8\u6210\u672c\u9ad8\u3002"
+  }, {
+    layer: "\u86cb\u7cd5\u6a31\u6843",
+    name: "\u5f3a\u5316\u5b66\u4e60",
+    pct: "~1%",
+    color: "#ff6b6b",
+    desc: "\u8bd5\u9519\u5b66\u4e60\u3002\u4fe1\u53f7\u6781\u7a00\u758f\uff0c\u4ea4\u4e92\u6210\u672c\u9ad8\u4e14\u5371\u9669\u3002"
+  }].map(item => /*#__PURE__*/React.createElement("div", {
+    key: item.name,
+    style: {
+      flex: "1 1 190px",
+      padding: 16,
+      borderRadius: 10,
+      background: `${item.color}08`,
+      border: `1px solid ${item.color}28`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: item.color,
+      fontWeight: 700,
+      marginBottom: 3,
+      fontFamily: "monospace"
+    }
+  }, item.layer, " \xB7 ", item.pct), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "#fff",
+      fontSize: 14,
+      fontWeight: 700,
+      marginBottom: 6
+    }
+  }, item.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.5)",
+      fontSize: 12.5,
+      lineHeight: 1.7
+    }
+  }, item.desc))))), /*#__PURE__*/React.createElement(Sec, {
+    id: "timeline",
+    title: "\u4ece\u8bba\u6587\u5230\u73b0\u5b9e",
+    sub: "JEPA \u7cfb\u5217\u7684\u843d\u5730\u8fdb\u5c55"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      paddingLeft: 28
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      left: 9,
+      top: 0,
+      bottom: 0,
+      width: 2,
+      background: "linear-gradient(to bottom,#ff6b6b,#f472b6)"
+    }
+  }), TL.map((t, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      position: "relative",
+      marginBottom: 24,
+      paddingLeft: 24
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      left: -20,
+      top: 3,
+      width: 14,
+      height: 14,
+      borderRadius: "50%",
+      background: t.color,
+      border: "3px solid #0a0a12",
+      boxShadow: `0 0 10px ${t.color}55`
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: t.color,
+      fontSize: 12,
+      fontWeight: 700,
+      fontFamily: "monospace"
+    }
+  }, t.year), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "#fff",
+      fontSize: 15,
+      fontWeight: 700,
+      margin: "3px 0"
+    }
+  }, t.title), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.5)",
+      fontSize: 12.5,
+      lineHeight: 1.6
+    }
+  }, t.desc))))), /*#__PURE__*/React.createElement(Sec, {
+    id: "debate",
+    title: "\u8def\u7ebf\u4e4b\u4e89",
+    sub: "\u4e16\u754c\u6a21\u578b vs LLM vs \u5956\u52b1\u5373\u4e00\u5207"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 14,
+      flexWrap: "wrap"
+    }
+  }, [{
+    s: "LeCun \u8def\u7ebf",
+    org: "Meta FAIR",
+    core: "\u4e16\u754c\u6a21\u578b + JEPA",
+    view: "\u667a\u80fd = \u5b66\u4e60\u4e16\u754c\u56e0\u679c\u7ed3\u6784\u5e76\u5185\u90e8\u6a21\u62df\u3002LLM\u53ea\u5b66\u5230\u8bed\u8a00\u7edf\u8ba1\u6a21\u5f0f\u3002",
+    color: "#00eac6"
+  }, {
+    s: "LLM \u6269\u5c55\u8def\u7ebf",
+    org: "OpenAI \u7b49",
+    core: "Transformer + \u89c4\u6a21\u5b9a\u5f8b",
+    view: "\u8db3\u591f\u5927\u7684\u8bed\u8a00\u6a21\u578b + \u8db3\u591f\u591a\u7684\u6570\u636e = \u6d8c\u73b0\u667a\u80fd\u3002",
+    color: "#a855f7"
+  }, {
+    s: "\u5956\u52b1\u5373\u4e00\u5207",
+    org: "DeepMind",
+    core: "RL + \u6b63\u786e\u5956\u52b1\u51fd\u6570",
+    view: "\u7ed9\u5b9a\u6b63\u786e\u5956\u52b1\u4fe1\u53f7\u548c\u8db3\u591f\u73af\u5883\u4ea4\u4e92\uff0c\u667a\u80fd\u81ea\u7136\u6d8c\u73b0\u3002",
+    color: "#ffd93d"
+  }].map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.s,
+    style: {
+      flex: "1 1 240px",
+      padding: 18,
+      borderRadius: 12,
+      background: "rgba(255,255,255,0.025)",
+      border: `1px solid ${s.color}28`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: s.color,
+      fontSize: 15,
+      fontWeight: 800,
+      marginBottom: 3
+    }
+  }, s.s), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.3)",
+      fontSize: 11.5,
+      marginBottom: 8
+    }
+  }, s.org, " \xB7 ", s.core), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.6)",
+      fontSize: 12.5,
+      lineHeight: 1.7
+    }
+  }, s.view)))), /*#__PURE__*/React.createElement(P, null, /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 20
+    }
+  }, "\u4e09\u6761\u8def\u7ebf\u5e76\u975e\u4e92\u65a5\u3002\u672a\u6765\u6700\u53ef\u80fd\u7684\u8def\u5f84\u662f", /*#__PURE__*/React.createElement(Hi, null, "\u878d\u5408"), "\u2014\u2014LLM\u5904\u7406\u8bed\u8a00\u548c\u7b26\u53f7\u63a8\u7406\uff0cJEPA\u7c7b\u4e16\u754c\u6a21\u578b\u5904\u7406\u7269\u7406\u611f\u77e5\u548c\u9884\u6d4b\uff0cRL\u63d0\u4f9b\u76ee\u6807\u9a71\u52a8\u7684\u884c\u4e3a\u4f18\u5316\u3002"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: "32px 0 16px",
+      borderTop: "1px solid rgba(255,255,255,0.05)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "rgba(255,255,255,0.2)",
+      fontSize: 11,
+      lineHeight: 1.8
+    }
+  }, "\u57fa\u4e8e Yann LeCun, ", /*#__PURE__*/React.createElement("a", {
+    href: PAPER_LINK,
+    target: "_blank",
+    rel: "noopener noreferrer",
+    style: {
+      color: "rgba(0,234,198,0.5)",
+      textDecoration: "none"
+    }
+  }, "A Path Towards Autonomous Machine Intelligence"), " (2022) \u6df1\u5ea6\u89e3\u8bfb"))));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
+
+</script>
+</body>
+</html>
